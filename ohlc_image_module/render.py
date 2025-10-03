@@ -52,7 +52,7 @@ def render_candlestick(df_window: pd.DataFrame, cfg: RenderConfig) -> Image.Imag
     wick_colors = (
         {"up": cfg.up_color, "down": cfg.down_color}
         if cfg.include_wicks
-        else {"up": cfg.bg, "down": cfg.bg}
+        else {"up": "none", "down": "none"}
     )
     edge_colors = {"up": cfg.up_color, "down": cfg.down_color}
     volume_color = _with_alpha(cfg.up_color, 0.5)
@@ -66,18 +66,19 @@ def render_candlestick(df_window: pd.DataFrame, cfg: RenderConfig) -> Image.Imag
     )
 
     rc = {
-        "axes.facecolor": cfg.bg,
-        "axes.edgecolor": cfg.bg,
-        "figure.facecolor": cfg.bg,
-        "savefig.facecolor": cfg.bg,
+        "axes.facecolor": "none",
+        "axes.edgecolor": "none",
+        "figure.facecolor": "none",
+        "savefig.facecolor": "none",
         "axes.grid": False,
-        "xtick.color": cfg.bg,
-        "ytick.color": cfg.bg,
+        "xtick.color": "none",
+        "ytick.color": "none",
     }
 
     style = mpf.make_mpf_style(marketcolors=market_colors, rc=rc)
     chart_type = "candle"
-    wick_width = cfg.wick_width if cfg.include_wicks else 0.0
+    # candle_linewidth controls both body edges and wicks
+    line_width = cfg.line_width if cfg.include_wicks else 0.0
 
     fig, axes = mpf.plot(
         plot_df,
@@ -87,8 +88,7 @@ def render_candlestick(df_window: pd.DataFrame, cfg: RenderConfig) -> Image.Imag
         figsize=(cfg.img_size / cfg.dpi, cfg.img_size / cfg.dpi),
         tight_layout=True,
         update_width_config={
-            "candle_linewidth": cfg.line_width,
-            "wick_linewidth": wick_width,
+            "candle_linewidth": line_width,
             "volume_linewidth": cfg.line_width,
         },
         axisoff=True,
@@ -108,9 +108,10 @@ def render_candlestick(df_window: pd.DataFrame, cfg: RenderConfig) -> Image.Imag
         dpi=cfg.dpi,
         bbox_inches="tight",
         pad_inches=cfg.tight_layout_pad,
+        transparent=True,
     )
     plt.close(fig)
     buf.seek(0)
-    image = Image.open(buf).convert("RGB")
+    image = Image.open(buf).convert("RGBA")
     image = image.resize((cfg.img_size, cfg.img_size), RESAMPLE_BICUBIC)
     return image

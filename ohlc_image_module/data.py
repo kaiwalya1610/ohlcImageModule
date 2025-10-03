@@ -27,6 +27,10 @@ def fetch_ohlcv(ticker: str, start: str, end: str, interval: str) -> pd.DataFram
     except Exception as exc:  # pragma: no cover - defensive path
         raise RuntimeError(f"Failed to download data for {ticker!r}: {exc}") from exc
 
+    # Flatten MultiIndex columns (yfinance wraps cols for multi-ticker support)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     if df.empty:
         raise ValueError(f"No data returned for ticker {ticker!r} in the specified range.")
 
@@ -43,7 +47,6 @@ def fetch_ohlcv(ticker: str, start: str, end: str, interval: str) -> pd.DataFram
     else:
         df.index = df.index.tz_convert(tz.UTC)
     df.index = df.index.tz_localize(None)
-
     df = df[~df.index.duplicated(keep="first")]
     df = df.sort_index()
     df = df.dropna(subset=["Open", "High", "Low", "Close"])

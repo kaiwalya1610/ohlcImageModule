@@ -75,9 +75,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default="zscore",
         help="Normalization mode applied to OHLC prices.",
     )
-    parser.add_argument("--bg", default="white", help="Background colour.")
-    parser.add_argument("--up_color", default="black", help="Colour for up candles.")
-    parser.add_argument("--down_color", default="gray", help="Colour for down candles.")
+    parser.add_argument("--bg", default="none", help="Background colour.")
+    parser.add_argument("--up_color", default="green", help="Colour for up candles.")
+    parser.add_argument("--down_color", default="red", help="Colour for down candles.")
     parser.add_argument(
         "--line_width", type=float, default=0.8, help="Outline line width for candles."
     )
