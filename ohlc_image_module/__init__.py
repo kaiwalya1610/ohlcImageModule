@@ -2,6 +2,17 @@
 from .config import PRICE_COLUMNS, REQUIRED_COLUMNS, RenderConfig
 from .data import fetch_ohlcv, validate_df
 from .determinism import set_determinism
+from .embedding_verification import (
+    bundle_to_dict,
+    generate_visualisations,
+    geometry_sanity_check,
+    linear_probe_walk_forward,
+    load_embedding_array,
+    load_embeddings,
+    retrieval_probe,
+    run_verification_protocol,
+    save_report,
+)
 from .io_utils import ensure_outdirs, save_image, write_metadata
 from .metadata import build_metadata_row
 from .processing import iter_windows, normalize_ohlc
@@ -17,6 +28,15 @@ __all__ = [
     "ensure_outdirs",
     "save_image",
     "write_metadata",
+    "geometry_sanity_check",
+    "linear_probe_walk_forward",
+    "retrieval_probe",
+    "run_verification_protocol",
+    "generate_visualisations",
+    "load_embeddings",
+    "load_embedding_array",
+    "bundle_to_dict",
+    "save_report",
     "build_metadata_row",
     "iter_windows",
     "normalize_ohlc",
