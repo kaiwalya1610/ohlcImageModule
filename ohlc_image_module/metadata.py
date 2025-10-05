@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Dict
 
 import pandas as pd
@@ -61,6 +60,5 @@ def build_metadata_row(
         "has_volume": cfg.include_volume,
         "img_size": cfg.img_size,
         "dpi": cfg.dpi,
-        "seed": int(os.environ.get("PYTHONHASHSEED", "0")),
         "ohlc_stats_json": json.dumps(ohlc_stats, sort_keys=True),
     }

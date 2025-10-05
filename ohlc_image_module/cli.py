@@ -17,16 +17,12 @@ import argparse
 import datetime as dt
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import pandas as pd
 
-os.environ.setdefault("PYTHONHASHSEED", "0")
-
 from .config import RenderConfig
 from .data import fetch_ohlcv, validate_df
-from .determinism import set_determinism
-from .io_utils import ensure_outdirs, save_image, write_metadata
 from .metadata import build_metadata_row
 from .processing import iter_windows, normalize_ohlc
 from .render import render_candlestick
@@ -103,7 +99,6 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=0.0,
         help="Padding passed to matplotlib savefig.",
     )
-    parser.add_argument("--seed", type=int, default=1337, help="Random seed for determinism.")
     parser.add_argument(
         "--save_metadata_csv",
         dest="save_metadata_csv",
@@ -132,28 +127,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _build_render_config(args: argparse.Namespace) -> RenderConfig:
-    """Construct a :class:`RenderConfig` from CLI arguments."""
-
-    return RenderConfig(
-        bg=args.bg,
-        up_color=args.up_color,
-        down_color=args.down_color,
-        line_width=args.line_width,
-        wick_width=args.wick_width,
-        include_wicks=args.include_wicks,
-        include_volume=not args.no_volume,
-        img_size=args.img_size,
-        dpi=args.dpi,
-        tight_layout_pad=args.tight_layout_pad,
-    )
-
-
 def _render_windows(
     df: pd.DataFrame,
     args: argparse.Namespace,
     render_cfg: RenderConfig,
-    out_dirs: Dict[str, str],
+    out_dir: str,
     logger: logging.Logger,
 ) -> List[Dict[str, object]]:
     """Iterate over windows, render images, and collect metadata rows."""
@@ -181,8 +159,11 @@ def _render_windows(
             f"win{args.window}-stride{effective_stride}-idx{idx_start}" if args.window > 0 else "FULL"
         )
         filename = f"{args.ticker}_{args.interval}_{start_label}_{end_label}_{suffix}.png"
-        img_path = os.path.join(out_dirs["images"], filename)
-        save_image(image, img_path)
+        img_path = os.path.join(out_dir, "images", filename)
+        
+        # Save image
+        os.makedirs(os.path.dirname(img_path), exist_ok=True)
+        image.save(img_path, format="PNG")
 
         logger.info("Saved image %s", img_path)
 
@@ -226,8 +207,6 @@ def main(argv: Optional[List[str]] = None) -> None:
     if end_dt < start_dt:
         raise SystemExit("End date must be greater than or equal to start date.")
 
-    set_determinism(args.seed)
-
     logger.info(
         "Fetching data for %s from %s to %s at interval %s",
         args.ticker,
@@ -241,17 +220,33 @@ def main(argv: Optional[List[str]] = None) -> None:
 
     validate_df(df, args.interval, args.fail_on_gaps)
 
-    render_cfg = _build_render_config(args)
-    out_dirs = ensure_outdirs(args.out_dir)
-    metadata_rows = _render_windows(df, args, render_cfg, out_dirs, logger)
+    # Build render config
+    render_cfg = RenderConfig(
+        bg=args.bg,
+        up_color=args.up_color,
+        down_color=args.down_color,
+        line_width=args.line_width,
+        wick_width=args.wick_width,
+        include_wicks=args.include_wicks,
+        include_volume=not args.no_volume,
+        img_size=args.img_size,
+        dpi=args.dpi,
+        tight_layout_pad=args.tight_layout_pad,
+    )
+    
+    # Create output directories
+    os.makedirs(args.out_dir, exist_ok=True)
+    
+    metadata_rows = _render_windows(df, args, render_cfg, args.out_dir, logger)
 
     if not metadata_rows:
         logger.warning("No images were generated.")
         return
 
     if args.save_metadata_csv:
-        metadata_path = os.path.join(out_dirs["root"], "metadata.csv")
-        write_metadata(metadata_rows, metadata_path)
+        metadata_path = os.path.join(args.out_dir, "metadata.csv")
+        df_meta = pd.DataFrame(metadata_rows)
+        df_meta.to_csv(metadata_path, index=False)
         logger.info("Metadata written to %s", metadata_path)
 
     logger.info("Generated %d image(s).", len(metadata_rows))

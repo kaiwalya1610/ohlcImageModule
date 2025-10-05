@@ -1,7 +1,6 @@
 """Modular helpers for generating embedding-ready OHLC candlestick images."""
 from .config import PRICE_COLUMNS, REQUIRED_COLUMNS, RenderConfig
 from .data import fetch_ohlcv, validate_df
-from .determinism import set_determinism
 from .embedding_verification import (
     bundle_to_dict,
     generate_visualisations,
@@ -13,7 +12,6 @@ from .embedding_verification import (
     run_verification_protocol,
     save_report,
 )
-from .io_utils import ensure_outdirs, save_image, write_metadata
 from .metadata import build_metadata_row
 from .processing import iter_windows, normalize_ohlc
 from .render import render_candlestick
@@ -24,10 +22,6 @@ __all__ = [
     "RenderConfig",
     "fetch_ohlcv",
     "validate_df",
-    "set_determinism",
-    "ensure_outdirs",
-    "save_image",
-    "write_metadata",
     "geometry_sanity_check",
     "linear_probe_walk_forward",
     "retrieval_probe",
