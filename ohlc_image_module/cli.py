@@ -17,14 +17,14 @@ import argparse
 import datetime as dt
 import logging
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
 from .config import RenderConfig
 from .data import fetch_ohlcv, validate_df
 from .metadata import build_metadata_row
-from .processing import iter_windows, normalize_ohlc
+from .processing import iter_windows, iter_segments, normalize_ohlc
 from .render import render_candlestick
 
 
@@ -123,41 +123,88 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=0,
         help="Limit the number of generated images (useful for smoke tests).",
     )
+    
+    # Segmentation options
+    seg_group = parser.add_argument_group("Segmentation Options")
+    seg_group.add_argument(
+        "--fixed-window",
+        action="store_true",
+        help="Use fixed-length windowing (legacy mode). Default is dynamic segmentation.",
+    )
+    seg_group.add_argument(
+        "--segmentation-model",
+        choices=["l2", "rbf", "linear", "normal", "ar"],
+        default="l2",
+        help="Ruptures cost function for dynamic segmentation (default: l2 for mean shifts).",
+    )
+    seg_group.add_argument(
+        "--segmentation-penalty",
+        type=float,
+        default=3.0,
+        help="Detection sensitivity (higher = fewer segments, default: 3.0).",
+    )
+    seg_group.add_argument(
+        "--min-segment-length",
+        type=int,
+        default=10,
+        help="Minimum bars per segment (default: 10).",
+    )
+    seg_group.add_argument(
+        "--max-segment-length",
+        type=int,
+        default=200,
+        help="Maximum bars per segment (0 = unlimited, default: 200).",
+    )
+    seg_group.add_argument(
+        "--segmentation-jump",
+        type=int,
+        default=5,
+        help="Computational optimization - consider every Nth point as breakpoint (default: 5).",
+    )
 
     return parser.parse_args(argv)
 
 
-def _render_windows(
+def _render_segments(
     df: pd.DataFrame,
     args: argparse.Namespace,
     render_cfg: RenderConfig,
+    seg_cfg: Dict[str, object],
     out_dir: str,
     logger: logging.Logger,
 ) -> List[Dict[str, object]]:
-    """Iterate over windows, render images, and collect metadata rows."""
+    """Iterate over segments, render images, and collect metadata rows."""
 
     metadata_rows: List[Dict[str, object]] = []
-    effective_stride = args.stride if args.stride > 0 else (args.window if args.window > 0 else 0)
 
-    for window_df, idx_start, idx_end in iter_windows(df, args.window, args.stride):
-        if len(window_df) < 5:
+    for segment_df, idx_start, idx_end, segment_id in iter_segments(df, seg_cfg):
+        if len(segment_df) < 5:
             logger.info(
-                "Skipping window [%d:%d] due to insufficient bars (%d).",
+                "Skipping segment %d [%d:%d] due to insufficient bars (%d).",
+                segment_id,
                 idx_start,
                 idx_end,
-                len(window_df),
+                len(segment_df),
             )
             continue
 
-        norm_df = normalize_ohlc(window_df, args.normalize)
+        norm_df = normalize_ohlc(segment_df, args.normalize)
 
         image = render_candlestick(norm_df, render_cfg)
 
-        start_label = window_df.index[0].strftime("%Y%m%d")
-        end_label = window_df.index[-1].strftime("%Y%m%d")
-        suffix = (
-            f"win{args.window}-stride{effective_stride}-idx{idx_start}" if args.window > 0 else "FULL"
-        )
+        start_label = segment_df.index[0].strftime("%Y%m%d")
+        end_label = segment_df.index[-1].strftime("%Y%m%d")
+        
+        # Generate filename based on segmentation mode
+        if seg_cfg["mode"] == "dynamic":
+            suffix = f"seg{segment_id:04d}-idx{idx_start}"
+        else:
+            effective_stride = args.stride if args.stride > 0 else (args.window if args.window > 0 else 0)
+            suffix = (
+                f"win{args.window}-stride{effective_stride}-idx{idx_start}" 
+                if args.window > 0 else "FULL"
+            )
+        
         filename = f"{args.ticker}_{args.interval}_{start_label}_{end_label}_{suffix}.png"
         img_path = os.path.join(out_dir, "images", filename)
         
@@ -173,13 +220,16 @@ def _render_windows(
                 interval=args.interval,
                 df_window=norm_df,
                 img_path=img_path,
-                n_bars=len(window_df),
+                n_bars=len(segment_df),
                 window=args.window,
-                stride=effective_stride,
+                stride=args.stride if args.stride > 0 else (args.window if args.window > 0 else 0),
                 idx_start=idx_start,
                 idx_end=idx_end,
                 normalize=args.normalize,
                 cfg=render_cfg,
+                segment_id=segment_id,
+                segmentation_mode=seg_cfg["mode"],
+                segmentation_config=seg_cfg,
             )
         )
 
@@ -234,10 +284,35 @@ def main(argv: Optional[List[str]] = None) -> None:
         tight_layout_pad=args.tight_layout_pad,
     )
     
+    # Build segmentation config
+    if args.fixed_window:
+        seg_cfg = {
+            "mode": "fixed",
+            "window": args.window,
+            "stride": args.stride,
+        }
+        logger.info("Using fixed-window segmentation (legacy mode)")
+    else:
+        seg_cfg = {
+            "mode": "dynamic",
+            "model": args.segmentation_model,
+            "penalty": args.segmentation_penalty,
+            "min_segment_length": args.min_segment_length,
+            "max_segment_length": args.max_segment_length,
+            "jump": args.segmentation_jump,
+        }
+        logger.info(
+            "Using dynamic segmentation (model=%s, penalty=%.2f, min=%d, max=%d)",
+            args.segmentation_model,
+            args.segmentation_penalty,
+            args.min_segment_length,
+            args.max_segment_length,
+        )
+    
     # Create output directories
     os.makedirs(args.out_dir, exist_ok=True)
     
-    metadata_rows = _render_windows(df, args, render_cfg, args.out_dir, logger)
+    metadata_rows = _render_segments(df, args, render_cfg, seg_cfg, args.out_dir, logger)
 
     if not metadata_rows:
         logger.warning("No images were generated.")

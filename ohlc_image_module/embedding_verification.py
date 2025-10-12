@@ -7,6 +7,26 @@ meaningful structure rather than only superficial chart style artefacts.
 The implementation follows the procedure described in the user instructions
 and exposes a small API that can be consumed either programmatically or via
 the accompanying CLI (``verify_embeddings.py``).
+
+## Segment-Aware Capabilities (v2.0+)
+
+This module is compatible with both fixed-window and dynamic segmentation modes:
+
+- **Metadata Loading**: Automatically detects `segmentation_mode` and `segment_id` 
+  fields in metadata CSV/Parquet files.
+  
+- **Naming Convention**: Handles both legacy (`win*-stride*-idx*`) and dynamic 
+  (`seg####-idx*`) filename patterns.
+  
+- **Visualization**: Grouping and coloring can be done by segment_id for dynamic 
+  segmentation analysis.
+
+**Note**: No code changes required for backward compatibility. Existing workflows 
+continue to function with new metadata fields simply being additional columns.
+
+For segment boundary visualization on price charts, see:
+- `examples/dynamic_segmentation_demo.py`
+- `tests/validation_segmentation.py`
 """
 
 from __future__ import annotations

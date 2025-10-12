@@ -42,11 +42,12 @@ def fetch_ohlcv(ticker: str, start: str, end: str, interval: str) -> pd.DataFram
     if not isinstance(df.index, pd.DatetimeIndex):
         raise TypeError("Expected DatetimeIndex from yfinance download.")
 
+    # Convert to IST (Indian Standard Time)
     if df.index.tz is None:
-        df.index = df.index.tz_localize(tz.UTC)
+        df.index = df.index.tz_localize(tz.UTC).tz_convert("Asia/Kolkata")
     else:
-        df.index = df.index.tz_convert(tz.UTC)
-    df.index = df.index.tz_localize(None)
+        df.index = df.index.tz_convert("Asia/Kolkata")
+    df.index = df.index.tz_localize(None)  # Remove timezone for cleaner display
     df = df[~df.index.duplicated(keep="first")]
     df = df.sort_index()
     df = df.dropna(subset=["Open", "High", "Low", "Close"])
