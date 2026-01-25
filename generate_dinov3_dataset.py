@@ -84,9 +84,8 @@ def generate_images_for_stock(
         print(f"⚠️  {ticker}: Not enough data ({len(df)} < {min_len})")
         return []
     
-    # Create class folder (e.g., train/RELIANCE.NS/)
-    stock_dir = output_dir / ticker
-    stock_dir.mkdir(parents=True, exist_ok=True)
+    # Ensure output directory exists (unified folder for all images)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Generate segments using dynamic segmentation
     segments = list(iter_segments(df, seg_cfg))
@@ -105,7 +104,7 @@ def generate_images_for_stock(
         
         # Save with consistent naming: TICKER_seg_XXXX.png
         img_name = f"{ticker.replace('.', '_')}_seg_{segment_id:04d}.png"
-        img_path = stock_dir / img_name
+        img_path = output_dir / img_name
         img.save(img_path)
         
         # Capture segment metadata
@@ -229,14 +228,14 @@ def main():
         wick_width=0.5,
         include_wicks=True,
         include_volume=True,
-        img_size=224,  # DINOv3 standard input size
+        img_size=224,  
         dpi=100,
         tight_layout_pad=0.05,
     )
     
     # Setup directories
-    train_dir = OUTPUT_ROOT / "train"
-    train_dir.mkdir(parents=True, exist_ok=True)
+    images_dir = OUTPUT_ROOT / "images"
+    images_dir.mkdir(parents=True, exist_ok=True)
     
     # Get date range
     start_date, end_date = get_date_range_for_past_week()
@@ -266,7 +265,7 @@ def main():
             interval=INTERVAL,
             render_cfg=render_cfg,
             seg_cfg=seg_cfg,
-            output_dir=train_dir,
+            output_dir=images_dir,
             class_index=class_idx,
         )
         
@@ -292,21 +291,15 @@ def main():
         print("=" * 70)
         print(f"\n📂 Dataset Structure:")
         print(f"   {OUTPUT_ROOT}/")
-        print(f"   ├── train/")
-        print(f"   │   ├── RELIANCE.NS/")
-        print(f"   │   │   ├── RELIANCE_NS_window_0000.png")
-        print(f"   │   │   └── ...")
-        print(f"   │   ├── TCS.NS/")
+        print(f"   ├── images/")
+        print(f"   │   ├── RELIANCE_NS_seg_0000.png")
+        print(f"   │   ├── RELIANCE_NS_seg_0001.png")
+        print(f"   │   ├── TCS_NS_seg_0000.png")
         print(f"   │   └── ...")
         print(f"   └── metadata/")
-        print(f"       ├── entries-TRAIN.txt")
+        print(f"       ├── dataset-TRAIN.csv")
         print(f"       ├── class-ids-TRAIN.txt")
         print(f"       └── class-names-TRAIN.txt")
-        print(f"\n🚀 To train DINOv3:")
-        print(f"   PYTHONPATH=${{PWD}} python -m dinov3.run.submit dinov3/train/train.py \\")
-        print(f"     --config-file dinov3/configs/train/vitl_im1k_lin834.yaml \\")
-        print(f"     --output-dir <OUTPUT_DIR> \\")
-        print(f"     train.dataset_path=ImageNet:split=TRAIN:root={OUTPUT_ROOT.absolute()}/train:extra={OUTPUT_ROOT.absolute()}/metadata")
     else:
         print("\n⚠️  No images generated. Check your data sources!")
 

@@ -15,6 +15,15 @@ from .embedding_verification import (
 from .metadata import build_metadata_row
 from .processing import iter_windows, normalize_ohlc
 from .render import render_candlestick
+from .vector_utils import (
+    interpolate_series,
+    standard_scale_series,
+    compute_rsi,
+    compute_log_returns,
+    compute_relative_volume,
+    generate_enriched_vector,
+    DEFAULT_TARGET_LEN,
+)
 
 __all__ = [
     "PRICE_COLUMNS",
@@ -35,4 +44,11 @@ __all__ = [
     "iter_windows",
     "normalize_ohlc",
     "render_candlestick",
+    "interpolate_series",
+    "standard_scale_series",
+    "compute_rsi",
+    "compute_log_returns",
+    "compute_relative_volume",
+    "generate_enriched_vector",
+    "DEFAULT_TARGET_LEN",
 ]
