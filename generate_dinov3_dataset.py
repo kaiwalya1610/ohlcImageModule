@@ -19,6 +19,10 @@ from ohlc_image_module.config import RenderConfig
 from ohlc_image_module.data import fetch_ohlcv
 from ohlc_image_module.render import render_candlestick
 from ohlc_image_module.processing import iter_segments
+from ohlc_image_module.vector_utils import (
+    generate_enriched_vector,
+    DEFAULT_TARGET_LEN,
+)
 
 
 # Nifty 50 stock symbols (as of Oct 2025 - adjust if needed)
@@ -54,10 +58,12 @@ def generate_images_for_stock(
     render_cfg: RenderConfig,
     seg_cfg: Dict[str, object],
     output_dir: Path,
+    vectors_dir: Path,
     class_index: int,
+    target_len: int = DEFAULT_TARGET_LEN,
 ) -> List[Dict[str, object]]:
-    """Generate segmented images for a single stock using dynamic segmentation.
-    
+    """Generate segmented images and time-series vectors for a single stock using dynamic segmentation.
+
     Args:
         ticker: Stock symbol
         start: Start date
@@ -66,10 +72,12 @@ def generate_images_for_stock(
         render_cfg: Rendering configuration
         seg_cfg: Segmentation configuration
         output_dir: Output directory for images
+        vectors_dir: Output directory for time-series vectors
         class_index: Class index for this stock
-        
+        target_len: Length per channel in the time-series vector (default: 128, total: 512)
+
     Returns:
-        List of metadata dicts for each generated image
+        List of metadata dicts for each generated image and vector
     """
     # Fetch data
     try:
@@ -99,14 +107,34 @@ def generate_images_for_stock(
     for segment_df, idx_start, idx_end, segment_id in segments:
         if len(segment_df) < 5:
             continue  # Skip very short segments
-            
+
         img = render_candlestick(segment_df, render_cfg)
-        
+
         # Save with consistent naming: TICKER_seg_XXXX.png
         img_name = f"{ticker.replace('.', '_')}_seg_{segment_id:04d}.png"
         img_path = output_dir / img_name
         img.save(img_path)
-        
+
+        # Generate time-series vector
+        vector_filename = img_name.rsplit('.', 1)[0] + '.npy'
+        vector_path_rel = f"vectors/{vector_filename}"
+        vector_status = 'success'
+
+        try:
+            # Extract close and volume from segment
+            close = segment_df['Close'].values
+            volume = segment_df['Volume'].values
+
+            # Generate enriched vector
+            vector = generate_enriched_vector(close, volume, target_len)
+
+            # Save vector
+            vector_path = vectors_dir / vector_filename
+            np.save(vector_path, vector)
+        except Exception as e:
+            vector_path_rel = None
+            vector_status = f'error: {str(e)}'
+
         # Capture segment metadata
         metadata = {
             'image_name': img_name,
@@ -117,6 +145,8 @@ def generate_images_for_stock(
             'segment_start_price': float(segment_df.iloc[0]['Open']),
             'segment_end_price': float(segment_df.iloc[-1]['Close']),
             'next_segment_close_price': None,  # Will be filled in next step
+            'vector_path': vector_path_rel,
+            'vector_status': vector_status,
         }
         metadata_list.append(metadata)
     
@@ -137,15 +167,15 @@ def generate_dinov3_metadata(
     split: str = "TRAIN"
 ) -> None:
     """Generate metadata files for DINOv3 with rich retrieval features.
-    
+
     Creates:
-        - dataset-TRAIN.csv: Rich CSV with temporal and price features
+        - dataset-TRAIN.csv: Rich CSV with temporal, price, and vector features
         - class-ids-TRAIN.txt: List of stock symbols (backward compatibility)
         - class-names-TRAIN.txt: List of stock names (backward compatibility)
-    
+
     Args:
         output_root: Root directory for dataset
-        all_metadata: List of metadata dicts from all stocks
+        all_metadata: List of metadata dicts from all stocks (includes vector info)
         split: Dataset split name (default: "TRAIN")
     """
     metadata_dir = output_root / "metadata"
@@ -176,7 +206,9 @@ def generate_dinov3_metadata(
         'segment_end_time',
         'segment_start_price',
         'segment_end_price',
-        'next_segment_close_price'
+        'next_segment_close_price',
+        'vector_path',
+        'vector_status'
     ]
     df_metadata = df_metadata[column_order]
     
@@ -198,7 +230,7 @@ def generate_dinov3_metadata(
             f.write(f"{class_name}\n")
     
     print(f"✅ Metadata saved:")
-    print(f"   - {dataset_path} ({len(all_metadata)} images, CSV with rich features)")
+    print(f"   - {dataset_path} ({len(all_metadata)} rows, includes image + vector metadata)")
     print(f"   - {class_ids_path} ({len(class_ids)} classes)")
     print(f"   - {class_names_path}")
 
@@ -208,7 +240,8 @@ def main():
     # Configuration
     OUTPUT_ROOT = Path("dinov3_nifty50_dataset")
     INTERVAL = "5m"
-    
+    TARGET_LEN = DEFAULT_TARGET_LEN  # 128 per channel, 512 total
+
     # Segmentation config - using dynamic segmentation by default
     seg_cfg = {
         "mode": "dynamic",
@@ -218,7 +251,7 @@ def main():
         "max_segment_length": 100,
         "jump": 5,
     }
-    
+
     # Render config (using defaults from your cli.py)
     render_cfg = RenderConfig(
         bg="#000000",
@@ -228,26 +261,29 @@ def main():
         wick_width=0.5,
         include_wicks=True,
         include_volume=True,
-        img_size=224,  
+        img_size=224,
         dpi=100,
         tight_layout_pad=0.05,
     )
-    
+
     # Setup directories
     images_dir = OUTPUT_ROOT / "images"
+    vectors_dir = OUTPUT_ROOT / "vectors"
     images_dir.mkdir(parents=True, exist_ok=True)
+    vectors_dir.mkdir(parents=True, exist_ok=True)
     
     # Get date range
     start_date, end_date = get_date_range_for_past_week()
     
     print("=" * 70)
-    print("🚀 DINOv3 Nifty 50 Dataset Generator (Dynamic Segmentation)")
+    print("🚀 DINOv3 Nifty 50 Dataset Generator (Images + Time-Series Vectors)")
     print("=" * 70)
     print(f"📅 Date Range: {start_date} to {end_date}")
     print(f"📊 Interval: {INTERVAL}")
     print(f"🔍 Segmentation: {seg_cfg['mode']} (model={seg_cfg['model']}, penalty={seg_cfg['penalty']})")
     print(f"📏 Segment Length: min={seg_cfg['min_segment_length']}, max={seg_cfg['max_segment_length']}")
     print(f"🎨 Image Size: {render_cfg.img_size}x{render_cfg.img_size}")
+    print(f"📐 Vector Config: {TARGET_LEN} per channel, {4 * TARGET_LEN} total")
     print(f"💾 Output: {OUTPUT_ROOT}")
     print("=" * 70)
     
@@ -266,7 +302,9 @@ def main():
             render_cfg=render_cfg,
             seg_cfg=seg_cfg,
             output_dir=images_dir,
+            vectors_dir=vectors_dir,
             class_index=class_idx,
+            target_len=TARGET_LEN,
         )
         
         if stock_metadata:
@@ -276,14 +314,15 @@ def main():
     total_images = len(all_metadata)
     
     print("\n" + "=" * 70)
-    print(f"✅ Image Generation Complete!")
+    print(f"✅ Image & Vector Generation Complete!")
     print(f"   - Successful Stocks: {successful_stocks}/{len(NIFTY_50_SYMBOLS)}")
     print(f"   - Total Images: {total_images}")
+    print(f"   - Total Vectors: {total_images}")
     print("=" * 70)
     
     # Generate DINOv3 metadata
     if total_images > 0:
-        print("\n📝 Generating DINOv3 metadata files...")
+        print("\n📝 Generating metadata files (images + vectors)...")
         generate_dinov3_metadata(OUTPUT_ROOT, all_metadata)
         
         print("\n" + "=" * 70)
@@ -296,8 +335,13 @@ def main():
         print(f"   │   ├── RELIANCE_NS_seg_0001.png")
         print(f"   │   ├── TCS_NS_seg_0000.png")
         print(f"   │   └── ...")
+        print(f"   ├── vectors/")
+        print(f"   │   ├── RELIANCE_NS_seg_0000.npy  # (512,) float32 array")
+        print(f"   │   ├── RELIANCE_NS_seg_0001.npy")
+        print(f"   │   ├── TCS_NS_seg_0000.npy")
+        print(f"   │   └── ...")
         print(f"   └── metadata/")
-        print(f"       ├── dataset-TRAIN.csv")
+        print(f"       ├── dataset-TRAIN.csv  # includes vector_path and vector_status")
         print(f"       ├── class-ids-TRAIN.txt")
         print(f"       └── class-names-TRAIN.txt")
     else:
