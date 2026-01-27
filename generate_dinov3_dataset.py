@@ -26,27 +26,27 @@ from ohlc_image_module.vector_utils import (
 
 
 # Nifty 50 stock symbols (as of Oct 2025 - adjust if needed)
-# NIFTY_50_SYMBOLS = [
-#     "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS",
-#     "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS",
-#     "BRITANNIA.NS", "CIPLA.NS", "COALINDIA.NS", "DIVISLAB.NS", "DRREDDY.NS",
-#     "EICHERMOT.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS", "HDFCLIFE.NS",
-#     "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "ICICIBANK.NS", "ITC.NS",
-#     "INDUSINDBK.NS", "INFY.NS", "JSWSTEEL.NS", "KOTAKBANK.NS", "LT.NS",
-#     "M&M.NS", "MARUTI.NS", "NTPC.NS", "NESTLEIND.NS", "ONGC.NS",
-#     "POWERGRID.NS", "RELIANCE.NS", "SBILIFE.NS", "SBIN.NS", "SUNPHARMA.NS",
-#     "TCS.NS", "TATACONSUM.NS", "TATAMOTORS.NS", "TATASTEEL.NS", "TECHM.NS",
-#     "TITAN.NS", "ULTRACEMCO.NS", "UPL.NS", "WIPRO.NS", "ZOMATO.NS"
-# ]
 NIFTY_50_SYMBOLS = [
-    "ADANIENT.NS", "ADANIPORTS.NS"]
+    "ADANIENT.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS",
+    "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BPCL.NS", "BHARTIARTL.NS",
+    "BRITANNIA.NS", "CIPLA.NS", "COALINDIA.NS", "DIVISLAB.NS", "DRREDDY.NS",
+    "EICHERMOT.NS", "GRASIM.NS", "HCLTECH.NS", "HDFCBANK.NS", "HDFCLIFE.NS",
+    "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS", "ICICIBANK.NS", "ITC.NS",
+    "INDUSINDBK.NS", "INFY.NS", "JSWSTEEL.NS", "KOTAKBANK.NS", "LT.NS",
+    "M&M.NS", "MARUTI.NS", "NTPC.NS", "NESTLEIND.NS", "ONGC.NS",
+    "POWERGRID.NS", "RELIANCE.NS", "SBILIFE.NS", "SBIN.NS", "SUNPHARMA.NS",
+    "TCS.NS", "TATACONSUM.NS", "TATAMOTORS.NS", "TATASTEEL.NS", "TECHM.NS",
+    "TITAN.NS", "ULTRACEMCO.NS", "UPL.NS", "WIPRO.NS", "ZOMATO.NS"
+]
+# NIFTY_50_SYMBOLS = [
+#     "ADANIENT.NS", "ADANIPORTS.NS"]
 
 
 def get_date_range_for_past_week() -> Tuple[str, str]:
     """Calculate date range for past 1 week (trading days)."""
     end_date = datetime.now()
     # Go back 2 weeks to ensure we get at least 5 trading days
-    start_date = end_date - timedelta(days=7)
+    start_date = end_date - timedelta(days=30)
     return start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")
 
 
@@ -239,7 +239,7 @@ def main():
     """Main entry point."""
     # Configuration
     OUTPUT_ROOT = Path("dinov3_nifty50_dataset")
-    INTERVAL = "5m"
+    INTERVAL = "15m"
     TARGET_LEN = DEFAULT_TARGET_LEN  # 128 per channel, 512 total
 
     # Segmentation config - using dynamic segmentation by default
