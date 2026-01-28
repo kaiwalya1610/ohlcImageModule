@@ -7,11 +7,23 @@ Qwen3-VL-Reranker, and saves benchmark results to a CSV file.
 """
 
 import random
+import sys
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import torch
+
+try:
+    import faiss
+except ImportError:
+    print("Warning: faiss not installed. Script will fail.")
+    faiss = None
+
+# Add the Qwen3-VL-Embedding directory to sys.path
+sys.path.append("/root/Qwen3-VL-Embedding")
+
 from src.models.qwen3_vl_embedding import Qwen3VLEmbedder
 from src.models.qwen3_vl_reranker import Qwen3VLReranker
 
@@ -19,9 +31,18 @@ from src.models.qwen3_vl_reranker import Qwen3VLReranker
 # ============================================================================
 # SETTINGS - Edit these variables to match your setup
 # ============================================================================
+# Ensure the working directory is set to /root/Qwen3-VL-Embedding/
+os.chdir("/root/Qwen3-VL-Embedding/")
 
-# Path to the unified embeddings file (from generate_embeddings.py)
-EMBEDDINGS_FILE = "./embeddings_unified.pt"
+# Dataset root directory (same as generate_embeddings.py)
+DATASET_ROOT = Path("/root/ohlcImageModule/dinov3_nifty50_dataset")
+
+# Metadata CSV path
+METADATA_CSV = DATASET_ROOT / "metadata" / "dataset-TRAIN.csv"
+
+# Per-item embedding input folders
+IMAGE_EMBED_DIR = DATASET_ROOT / "embeddings" / "images"
+TS_EMBED_DIR = DATASET_ROOT / "embeddings" / "timeseries"
 
 # Output CSV for benchmark results
 OUTPUT_CSV = "./benchmark_retrieval_results.csv"
@@ -44,6 +65,91 @@ RANDOM_SEED = 42
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
+
+def load_dataset_paths(metadata_csv: Path, dataset_root: Path):
+    """Load image and vector paths from metadata CSV."""
+    if not metadata_csv.exists():
+        raise FileNotFoundError(f"Metadata CSV not found: {metadata_csv}")
+
+    df = pd.read_csv(metadata_csv)
+    print(f"Loaded metadata: {len(df)} entries")
+
+    # Build absolute image paths
+    image_paths = []
+    for _, row in df.iterrows():
+        img_path = dataset_root / "images" / row['image_name']
+        image_paths.append(str(img_path.absolute()))
+
+    # Build absolute vector paths (filter successful vectors only)
+    vector_paths = []
+    for _, row in df.iterrows():
+        if row.get('vector_status') == 'success' and pd.notna(row.get('vector_path')):
+            vec_path = dataset_root / row['vector_path']
+            vector_paths.append(str(vec_path.absolute()))
+
+    print(f"Found {len(image_paths)} images, {len(vector_paths)} vectors")
+    return image_paths, vector_paths
+
+
+def embedding_path_for_file(file_path: str, output_dir: Path) -> Path:
+    """Create embedding path based on input file name."""
+    base_name = Path(file_path).stem
+    # Save as .index (FAISS index file)
+    return output_dir / f"{base_name}.index"
+
+
+def load_embeddings_from_indices(file_paths: list, embed_dir: Path):
+    """Load embeddings from individual FAISS .index files.
+    
+    Returns:
+        tuple: (embeddings_array, valid_paths)
+    """
+    embeddings = []
+    valid_paths = []
+    
+    print(f"Loading embeddings from {embed_dir}...")
+    
+    for path in file_paths:
+        index_path = embedding_path_for_file(path, embed_dir)
+        
+        if not index_path.exists():
+            continue
+            
+        try:
+            # Read FAISS index
+            index = faiss.read_index(str(index_path))
+            # Reconstruct the single vector (index 0)
+            vec = index.reconstruct(0)
+            embeddings.append(vec)
+            valid_paths.append(path)
+        except Exception as e:
+            print(f"Error loading {index_path}: {e}")
+            
+    if not embeddings:
+        return np.array([]), []
+        
+    return np.vstack(embeddings), valid_paths
+
+
+def load_ts_vectors_as_text(vector_paths: list) -> list:
+    """Load time-series vectors from .npy files and convert to text strings."""
+    if not vector_paths:
+        return []
+
+    texts = []
+    for path in vector_paths:
+        try:
+            vec = np.load(path)
+            # Convert numpy array directly to string
+            text = str(vec)
+            texts.append(text)
+        except Exception as e:
+            print(f"Error loading vector {path}: {e}")
+            # Append empty string or handle mismatch? 
+            # Ideally we should filter these out earlier, but for now strict matching
+            
+    return texts
+
 
 def retrieve_similar_items(query_idx: int, all_embeddings: np.ndarray, k: int = 10):
     """Find top-k similar items excluding the query itself.
@@ -85,6 +191,15 @@ def normalize_embeddings(embeddings: np.ndarray) -> np.ndarray:
     return embeddings / norms
 
 
+def save_intermediate_results(results_list: list, output_csv: str):
+    """Save current results to CSV to prevent data loss."""
+    if not results_list:
+        return
+    df = pd.DataFrame(results_list)
+    df.to_csv(output_csv, index=False)
+    # print(f"  [Saved {len(results_list)} results to {output_csv}]") # Optional verbose
+
+
 # ============================================================================
 # MAIN LOGIC
 # ============================================================================
@@ -99,26 +214,37 @@ def main():
         random.seed(RANDOM_SEED)
         print(f"Random seed: {RANDOM_SEED}")
 
-    # Step 1: Load unified embeddings
-    print(f"\nStep 1: Loading embeddings from {EMBEDDINGS_FILE}")
-    data = torch.load(EMBEDDINGS_FILE, weights_only=False)
+    # Step 1: Load metadata and embeddings
+    print(f"\nStep 1: Loading data from {DATASET_ROOT}")
+    
+    # 1.1 Load paths from metadata
+    all_image_paths, all_vector_paths = load_dataset_paths(METADATA_CSV, DATASET_ROOT)
 
-    image_embeddings = data["image_embeddings"].numpy()
-    image_paths = data["image_paths"]
-    ts_embeddings = data["ts_embeddings"].numpy() if data["ts_embeddings"].numel() > 0 else np.array([])
-    ts_paths = data["ts_paths"]
-    ts_texts = data.get("ts_texts", [])
+    if not all_image_paths:
+        print("No images found in metadata!")
+        return
 
-    print(f"  Images: {len(image_paths)} embeddings of dim {image_embeddings.shape[1]}")
-    if len(ts_embeddings) > 0:
-        print(f"  Time-series: {len(ts_paths)} embeddings of dim {ts_embeddings.shape[1]}")
-        print(f"  Time-series texts: {len(ts_texts)}")
-    else:
-        print("  Time-series: None found")
+    # 1.2 Load Image Embeddings
+    print("\n  Loading Image Embeddings...")
+    image_embeddings, image_paths = load_embeddings_from_indices(all_image_paths, IMAGE_EMBED_DIR)
+    print(f"  Loaded {len(image_embeddings)} image embeddings")
+
+    # 1.3 Load Time-Series Embeddings & Texts
+    print("\n  Loading Time-Series Embeddings...")
+    ts_embeddings, ts_paths = load_embeddings_from_indices(all_vector_paths, TS_EMBED_DIR)
+    print(f"  Loaded {len(ts_embeddings)} time-series embeddings")
+    
+    ts_texts = []
+    if len(ts_paths) > 0:
+        print("  Loading Time-Series texts for reranking...")
+        # Only load texts for the paths we successfully loaded embeddings for
+        ts_texts = load_ts_vectors_as_text(ts_paths)
+        print(f"  Loaded {len(ts_texts)} text representations")
 
     # Normalize embeddings for cosine similarity
     print("\n  Normalizing embeddings...")
-    image_embeddings = normalize_embeddings(image_embeddings)
+    if len(image_embeddings) > 0:
+        image_embeddings = normalize_embeddings(image_embeddings)
     if len(ts_embeddings) > 0:
         ts_embeddings = normalize_embeddings(ts_embeddings)
 
@@ -222,6 +348,9 @@ def main():
                     "similarity_score": round(float(sim_score), 6),
                     "rerank_score": round(float(rerank_score), 6),
                 })
+
+            # Save intermediate results
+            save_intermediate_results(results, OUTPUT_CSV)
     elif num_ts_queries > 0:
         print("\nStep 4: Skipping time-series retrieval (no text data available)")
 

@@ -50,7 +50,7 @@ TS_EMBED_DIR = DATASET_ROOT / "embeddings" / "timeseries"
 MODEL_PATH = "Qwen/Qwen3-VL-Embedding-8B"
 
 # Batch size for processing (lower = less VRAM, slower)
-BATCH_SIZE = 4
+BATCH_SIZE = 2
 
 
 # ============================================================================
@@ -150,7 +150,12 @@ def main():
 
     # Step 2: Load the embedding model
     print(f"\nStep 2: Loading Qwen3-VL model: {MODEL_PATH}")
-    model = Qwen3VLEmbedder(model_name_or_path=MODEL_PATH)
+    # Use float16 and auto device mapping for efficiency
+    model = Qwen3VLEmbedder(
+        model_name_or_path=MODEL_PATH,
+        torch_dtype=torch.float16,
+        device_map="auto"
+    )
     print("Model loaded!")
 
     # Step 3: Generate image embeddings in batches
