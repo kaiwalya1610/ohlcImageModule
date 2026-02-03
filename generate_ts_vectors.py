@@ -25,7 +25,7 @@ from ohlc_image_module.vector_utils import (
 # =============================================================================
 METADATA_PATH = "dinov3_nifty50_dataset/metadata/dataset-TRAIN.csv"
 OUT_DIR = "dinov3_nifty50_dataset"
-INTERVAL = "5m"
+INTERVAL = "1d"
 TARGET_LEN = DEFAULT_TARGET_LEN  # 128 per channel, 512 total
 # =============================================================================
 

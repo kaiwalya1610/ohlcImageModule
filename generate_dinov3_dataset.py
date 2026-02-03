@@ -239,7 +239,7 @@ def main():
     """Main entry point."""
     # Configuration
     OUTPUT_ROOT = Path("dinov3_nifty50_dataset")
-    INTERVAL = "15m"
+    INTERVAL = "1d"
     TARGET_LEN = DEFAULT_TARGET_LEN  # 128 per channel, 512 total
 
     # Segmentation config - using dynamic segmentation by default
@@ -350,4 +350,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
